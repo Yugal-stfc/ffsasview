@@ -12,6 +12,12 @@
 # stack dumps due to Git Bash internal crashes
 *.stackdump
 
+#dev stuff
+*.sh
+*.txt
+.local_bin/
+.pip_packages/
+
 # Editor files
 *.pyproj
 *.sln

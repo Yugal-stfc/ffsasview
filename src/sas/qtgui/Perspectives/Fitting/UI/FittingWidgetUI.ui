@@ -31,7 +31,7 @@
      <item>
       <spacer name="horizontalSpacer">
        <property name="orientation">
-        <enum>Qt::Horizontal</enum>
+        <enum>Qt::Orientation::Horizontal</enum>
        </property>
        <property name="sizeHint" stdset="0">
         <size>
@@ -120,7 +120,7 @@
           <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Choose a file to set initial fit parameters.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
          </property>
          <property name="sizeAdjustPolicy">
-          <enum>QComboBox::AdjustToContents</enum>
+          <enum>QComboBox::SizeAdjustPolicy::AdjustToContents</enum>
          </property>
         </widget>
        </item>
@@ -136,7 +136,7 @@
      <item>
       <spacer name="horizontalSpacer_4">
        <property name="orientation">
-        <enum>Qt::Horizontal</enum>
+        <enum>Qt::Orientation::Horizontal</enum>
        </property>
        <property name="sizeHint" stdset="0">
         <size>
@@ -222,10 +222,10 @@
              <string notr="true"/>
             </property>
             <property name="editTriggers">
-             <set>QAbstractItemView::CurrentChanged|QAbstractItemView::DoubleClicked|QAbstractItemView::EditKeyPressed|QAbstractItemView::SelectedClicked</set>
+             <set>QAbstractItemView::EditTrigger::CurrentChanged|QAbstractItemView::EditTrigger::DoubleClicked|QAbstractItemView::EditTrigger::EditKeyPressed|QAbstractItemView::EditTrigger::SelectedClicked</set>
             </property>
             <property name="selectionMode">
-             <enum>QAbstractItemView::ExtendedSelection</enum>
+             <enum>QAbstractItemView::SelectionMode::ExtendedSelection</enum>
             </property>
            </widget>
           </item>
@@ -299,6 +299,13 @@
             </property>
             <property name="checkable">
              <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="chkFreeForm">
+            <property name="text">
+             <string>Free Form</string>
             </property>
            </widget>
           </item>
@@ -377,7 +384,7 @@
        <item row="1" column="2">
         <spacer name="horizontalSpacer_3">
          <property name="orientation">
-          <enum>Qt::Horizontal</enum>
+          <enum>Qt::Orientation::Horizontal</enum>
          </property>
          <property name="sizeHint" stdset="0">
           <size>
@@ -440,7 +447,7 @@
      <widget class="QWidget" name="tabMagnetism">
       <property name="enabled">
        <bool>false</bool>
-            </property>
+      </property>
       <attribute name="title">
        <string>Magnetism</string>
       </attribute>
@@ -463,10 +470,6 @@
   <tabstop>lstParams</tabstop>
   <tabstop>chkPolydispersity</tabstop>
   <tabstop>chk2DView</tabstop>
-  <tabstop>chkMagnetism</tabstop>
-  <tabstop>chkChainFit</tabstop>
-  <tabstop>lstMagnetic</tabstop>
-  <tabstop>cmdMagneticDisplay</tabstop>
   <tabstop>cmdPlot</tabstop>
   <tabstop>cmdFit</tabstop>
   <tabstop>cmdHelp</tabstop>
