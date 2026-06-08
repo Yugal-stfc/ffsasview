@@ -474,16 +474,22 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         # Initial status of the ordering tab - invisible
         self.tabFitting.removeTab(TAB_ORDERING)
 
-    def initializeCategoryCombo(self) -> None:
+    def initializeCategoryCombo(self, category_list: list[str] | None = None) -> None:
         """
-        Model category combo setup
+        Model category combo setup. If categories is provided, use that list;
+        otherwise use the full category list.
         """
-        category_list = sorted(self.master_category_dict)
+        if category_list is None:
+            category_list = getattr(self, "_full_category_list", sorted(self.master_category_dict.keys()))
+
+        self.cbCategory.blockSignals(True)
+        self.cbCategory.clear()
         self.cbCategory.addItem(CATEGORY_DEFAULT)
         self.cbCategory.addItems(category_list)
         if CATEGORY_STRUCTURE not in category_list:
             self.cbCategory.addItem(CATEGORY_STRUCTURE)
         self.cbCategory.setCurrentIndex(0)
+        self.cbCategory.blockSignals(False)
 
     def setEnablementOnDataLoad(self) -> None:
         """
@@ -584,6 +590,17 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
     def toggleFreeForm(self, isChecked: bool) -> None:
         self.chkPolydispersity.setEnabled(True)
         self.chkPolydispersity.setChecked(isChecked)
+
+        if isChecked:
+            # Keep only Cylinder, Sphere, Ellipsoid categories (case‑insensitive match)
+            allowed = {"cylinder", "sphere", "ellipsoid"}
+            filtered = [
+                cat for cat in getattr(self, "_full_category_list", []) if any(key in cat.lower() for key in allowed)
+            ]
+            print(f"Allowed models in free form: {filtered}")
+            self.initializeCategoryCombo(filtered)
+        else:
+            self.initializeCategoryCombo()
 
     def toggleMagnetism(self, isChecked: bool) -> None:
         """ Enable/disable the magnetism tab """
@@ -1876,6 +1893,9 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         with open(categorization_file, 'rb') as cat_file:
             self.master_category_dict = json.load(cat_file)
             self.regenerateModelDict()
+
+        # Store the full list of categories for later filtering
+        self._full_category_list = sorted(self.master_category_dict.keys())
 
         # Load the model dict
         models = load_standard_models()
