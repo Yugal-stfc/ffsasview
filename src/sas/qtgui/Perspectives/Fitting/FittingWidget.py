@@ -474,22 +474,16 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         # Initial status of the ordering tab - invisible
         self.tabFitting.removeTab(TAB_ORDERING)
 
-    def initializeCategoryCombo(self, category_list: list[str] | None = None) -> None:
+    def initializeCategoryCombo(self) -> None:
         """
-        Model category combo setup. If categories is provided, use that list;
-        otherwise use the full category list.
+        Model category combo setup.
         """
-        if category_list is None:
-            category_list = getattr(self, "_full_category_list", sorted(self.master_category_dict.keys()))
-
-        self.cbCategory.blockSignals(True)
-        self.cbCategory.clear()
+        category_list = sorted(self.master_category_dict)
         self.cbCategory.addItem(CATEGORY_DEFAULT)
         self.cbCategory.addItems(category_list)
         if CATEGORY_STRUCTURE not in category_list:
             self.cbCategory.addItem(CATEGORY_STRUCTURE)
         self.cbCategory.setCurrentIndex(0)
-        self.cbCategory.blockSignals(False)
 
     def setEnablementOnDataLoad(self) -> None:
         """
@@ -591,16 +585,7 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         self.chkPolydispersity.setEnabled(True)
         self.chkPolydispersity.setChecked(isChecked)
 
-        if isChecked:
-            # Keep only Cylinder, Sphere, Ellipsoid categories (case‑insensitive match)
-            allowed = {"cylinder", "sphere", "ellipsoid"}
-            filtered = [
-                cat for cat in getattr(self, "_full_category_list", []) if any(key in cat.lower() for key in allowed)
-            ]
-            print(f"Allowed models in free form: {filtered}")
-            self.initializeCategoryCombo(filtered)
-        else:
-            self.initializeCategoryCombo()
+        self.onSelectCategory()
 
     def toggleMagnetism(self, isChecked: bool) -> None:
         """ Enable/disable the magnetism tab """
@@ -663,7 +648,7 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         # Free form
         self.chkFreeForm.setVisible(True)
         self.chkFreeForm.setChecked(False)
-        self.chkFreeForm.setEnabled(True)
+        self.chkFreeForm.setEnabled(False)
         # Tabs
         self.tabFitting.setTabEnabled(TAB_POLY, False)
         self.tabFitting.setTabEnabled(TAB_MAGNETISM, False)
@@ -1432,6 +1417,14 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
                 self.cbCategory.blockSignals(False)
             return
 
+        # supported Categories for free-form
+        allowed_ff_categories = {"cylinder", "sphere", "ellipsoid"}
+        if any(key in category.lower() for key in allowed_ff_categories):
+            self.chkFreeForm.setEnabled(True)
+        else:
+            self.chkFreeForm.setChecked(False)
+            self.chkFreeForm.setEnabled(False)
+
         if category == CATEGORY_STRUCTURE:
             self.disableModelCombo()
             self.enableStructureCombo()
@@ -1460,6 +1453,16 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         self.cbModel.blockSignals(True)
         self.cbModel.addItem(MODEL_DEFAULT)
         models_to_show = [m[0] for m in model_list if m[0] not in SUPPRESSED_MODELS and m[1]]
+
+        # supported Models for free-form
+        if self.chkFreeForm.isChecked():
+            allowed_ff_models = ["sphere", "ellipsoid", "cylinder"]
+
+            if category.lower() in allowed_ff_models:
+                models_to_show = [m for m in models_to_show if m.lower() == category.lower()]
+            else:
+                models_to_show = []
+
         self.cbModel.addItems(sorted(models_to_show))
         self.cbModel.blockSignals(False)
 
