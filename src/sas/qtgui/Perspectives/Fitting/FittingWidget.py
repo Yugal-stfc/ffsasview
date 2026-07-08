@@ -32,7 +32,7 @@ from sas.qtgui.Perspectives.Fitting.ModelThread import Calc1D, Calc2D
 from sas.qtgui.Perspectives.Fitting.OptionsWidget import OptionsWidget
 from sas.qtgui.Perspectives.Fitting.OrderWidget import OrderWidget
 from sas.qtgui.Perspectives.Fitting.ParameterListWidget import ParameterListWidget
-from sas.qtgui.Perspectives.Fitting.PolydispersityWidget import PolydispersityWidget
+from sas.qtgui.Perspectives.Fitting.PolydispersityWidget import FREE_FORM_MODELS, PolydispersityWidget
 from sas.qtgui.Perspectives.Fitting.ReportPageLogic import ReportPageLogic
 from sas.qtgui.Perspectives.Fitting.SmearingWidget import SmearingWidget
 from sas.qtgui.Perspectives.Fitting.UI.FittingWidgetUI import Ui_FittingWidgetUI
@@ -584,6 +584,9 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
     def toggleFreeForm(self, isChecked: bool) -> None:
         self.chkPolydispersity.setEnabled(True)
         self.chkPolydispersity.setChecked(isChecked)
+
+        # Switch the polydispersity tab into/out of free-form mode
+        self.polydispersity_widget.setFreeForm(isChecked)
 
         self.onSelectCategory()
 
@@ -1418,8 +1421,7 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
             return
 
         # supported Categories for free-form
-        allowed_ff_categories = {"cylinder", "sphere", "ellipsoid"}
-        if any(key in category.lower() for key in allowed_ff_categories):
+        if any(key in category.lower() for key in FREE_FORM_MODELS):
             self.chkFreeForm.setEnabled(True)
         else:
             self.chkFreeForm.setChecked(False)
@@ -1456,9 +1458,7 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
 
         # supported Models for free-form
         if self.chkFreeForm.isChecked():
-            allowed_ff_models = ["sphere", "ellipsoid", "cylinder"]
-
-            if category.lower() in allowed_ff_models:
+            if category.lower() in FREE_FORM_MODELS:
                 models_to_show = [m for m in models_to_show if m.lower() == category.lower()]
             else:
                 models_to_show = []
