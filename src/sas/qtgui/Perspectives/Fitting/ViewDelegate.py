@@ -138,8 +138,13 @@ class PolyViewDelegate(QtWidgets.QStyledItemDelegate):
         self.poly_nsigs = 5
         self.poly_function = 6
         self.poly_filename = 7
+        # Free-form (FFSAS) mode: when set, overrides the editable column
+        # list, since free-form schemas define their own column layouts.
+        self.free_form_columns = None
 
     def editableParameters(self):
+        if self.free_form_columns is not None:
+            return self.free_form_columns
         return [self.poly_pd, self.poly_min, self.poly_max, self.poly_npts, self.poly_nsigs]
 
     def columnDict(self):

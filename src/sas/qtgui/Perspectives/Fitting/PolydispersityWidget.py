@@ -18,6 +18,41 @@ from sas.qtgui.Perspectives.Fitting.UI.PolydispersityWidget import Ui_Polydisper
 from sas.qtgui.Perspectives.Fitting.ViewDelegate import PolyViewDelegate
 
 DEFAULT_POLYDISP_FUNCTION = 'gaussian'
+# Default Free-Form parameters
+DEFAULT_FF_NBINS = 50
+DEFAULT_FF_NBINS_ANGLE = 30
+
+# Each model defines its own table schema:
+#   "columns" - the column captions, in display order.
+#   "rows"    - one entry per discretised parameter. Values map a column
+#               caption to that cell's default; captions without a value
+#               default to an empty cell.
+
+columns = ["Parameter", "Min", "Max", "N bins"]
+
+FREE_FORM_MODELS = {
+    "sphere": {
+        "columns": ["Parameter", "Min", "Max", "N bins", "qx", "qy", "drho"],
+        "rows": {
+            "radius": {"Min": 1.0, "Max": 1000.0, "N bins": DEFAULT_FF_NBINS},
+        },
+    },
+    "ellipsoid": {
+        "columns": ["Parameter", "Min", "Max", "N bins", "qx", "qy", "Theta", "Phi", "drho"],
+        "rows": {
+            "radius_polar": {"Min": 1.0, "Max": 1000.0, "N bins": DEFAULT_FF_NBINS, "Theta": 0.0, "Phi": 0.0},
+            "radius_equatorial": {"Min": 1.0, "Max": 1000.0, "N bins": DEFAULT_FF_NBINS, "Theta": 0.0, "Phi": 0.0},
+        },
+    },
+    "cylinder": {
+        "columns": ["Parameter", "Min", "Max", "N bins", "qx", "qy", "Theta", "Phi", "drho"],
+        "rows": {
+            "radius": {"Min": 1.0, "Max": 1000.0, "N bins": DEFAULT_FF_NBINS, "Theta": 0.0, "Phi": 0.0},
+            "length": {"Min": 1.0, "Max": 1000.0, "N bins": DEFAULT_FF_NBINS, "Theta": 0.0, "Phi": 0.0},
+        },
+    },
+}
+
 logger = logging.getLogger(__name__)
 
 class PolydispersityWidget(QtWidgets.QWidget, Ui_PolydispersityWidgetUI):
@@ -34,6 +69,10 @@ class PolydispersityWidget(QtWidgets.QWidget, Ui_PolydispersityWidgetUI):
         self.poly_model = FittingUtilities.ToolTippedItemModel()
         self.is2D = False
         self.isActive = False
+        self.free_form = False
+        # free-form values: {param_name: {column_caption: value}}.
+        self.free_form_params = {}
+        self.free_form_captions = []
         self.logic = parent.logic
         self.poly_params = {}
         self.has_poly_error_column = False
@@ -86,11 +125,125 @@ class PolydispersityWidget(QtWidgets.QWidget, Ui_PolydispersityWidgetUI):
         delegate.poly_function = 6
         delegate.poly_filename = 7
 
+        # Standard mode (basic polydispersity): no free-form column overrides on the delegate
+        delegate.free_form_columns = None
+
+        # Free-form mode: rebuild the table from the model's schema instead
+        if self.free_form:
+            self.setFreeFormModel()
+            return
+
         [self.setPolyModelParameters(i, param) for i, param in \
             enumerate(parameters) if param.polydisperse]
 
         FittingUtilities.addPolyHeadersToModel(self.poly_model)
         self.poly_params_to_fit = self.checkedListFromModel()
+
+    def setFreeForm(self, isChecked: bool) -> None:
+        """
+        Switch the polydispersity tab into/out of free-form (FFSAS) mode
+        and rebuild the parameter table accordingly.
+        """
+        if self.free_form == isChecked:
+            return
+        self.free_form = isChecked
+        if self.logic is not None and self.logic.model_parameters:
+            self.setPolyModel()
+
+    def setFreeFormModel(self) -> None:
+        """
+        Rebuild the table for free-form using FREE_FORM_MODELS.
+        Called from setPolyModel() after the model is cleared.
+        """
+        # id is better than name
+        model_id = str(getattr(self.logic.kernel_module, "id", "") or "").lower()
+        schema = FREE_FORM_MODELS[model_id]
+
+        captions = schema["columns"]
+        self.free_form_captions = captions
+        self.free_form_params = {}
+
+        delegate = self.lstPoly.itemDelegate()
+        delegate.poly_parameter = 0
+        delegate.poly_min = captions.index("Min") if "Min" in captions else None
+        delegate.poly_max = captions.index("Max") if "Max" in captions else None
+        delegate.poly_npts = captions.index("N bins") if "N bins" in captions else None
+        delegate.poly_pd = None
+        delegate.poly_nsigs = None
+        delegate.poly_function = None
+        delegate.poly_filename = None
+        delegate.poly_error = None
+        delegate.free_form_columns = list(range(1, len(captions)))
+
+        for param_name, values in schema["rows"].items():
+            self.addNameToFreeFormModel(param_name, values, captions)
+
+        FittingUtilities.addFreeFormHeadersToModel(self.poly_model, captions)
+        self.poly_params_to_fit = self.checkedListFromModel()
+
+    def addNameToFreeFormModel(self, param_name: str, values: dict, captions: list[str]) -> None:
+        """
+        Create a checked free-form row.
+        """
+        param_wname = param_name + ".width"
+
+        self.poly_params[param_wname] = 0.0
+        self.poly_params[param_name + ".nsigmas"] = 0.0
+        if "N bins" in values:
+            self.poly_params[param_name + ".npts"] = values["N bins"]
+
+        # Set the live free-form state for this parameter
+        self.free_form_params[param_name] = {caption: values.get(caption, "") for caption in captions[1:]}
+
+        checked_list = ["Discretisation of " + param_name] + [str(values.get(caption, "")) for caption in captions[1:]]
+        FittingUtilities.addCheckedListToModel(self.poly_model, checked_list)
+
+        all_items = self.poly_model.rowCount()
+        self.poly_model.item(all_items - 1, 0).setData(param_wname, role=QtCore.Qt.UserRole)
+
+    def onFreeFormModelChange(self, top: QtCore.QModelIndex) -> None:
+        """
+        Free-form counterpart of onPolyModelChange
+        """
+        item = self.poly_model.itemFromIndex(top)
+        model_column = item.column()
+        model_row = item.row()
+        name_index = self.poly_model.index(model_row, 0)
+        display_name = str(name_index.data())  # "Discretisation, not distribution"
+        param_wname = self.polyNameToParam(display_name)
+        param_name = display_name.rsplit()[-1]
+
+        delegate = self.lstPoly.itemDelegate()
+
+        if model_column == delegate.poly_parameter:
+            # Checkbox toggled: is the parameter included in the fit?
+            if item.checkState() == QtCore.Qt.Checked:
+                self.poly_params_to_fit.append(param_wname)
+            elif param_wname in self.poly_params_to_fit:
+                self.poly_params_to_fit.remove(param_wname)
+            self.cmdFitSignal.emit()
+            return
+
+        caption = self.free_form_captions[model_column]
+        try:
+            value = GuiUtils.toDouble(item.text())
+        except TypeError:
+            value = item.text()
+        self.free_form_params.setdefault(param_name, {})[caption] = value
+
+        if caption == "N bins":
+            self.poly_params[param_name + ".npts"] = value
+
+        # Update main model for display
+        self.iterateOverModelSignal.emit()
+
+    def freeFormState(self) -> dict:
+        """
+        Snapshot of the free-form table: {param_name: {caption: value}}.
+        API still needs to be designed.
+        For later use
+        """
+        return {name: dict(values) for name, values in self.free_form_params.items()}
 
     @staticmethod
     def polyNameToParam(param_name: str) -> str:
@@ -98,6 +251,7 @@ class PolydispersityWidget(QtWidgets.QWidget, Ui_PolydispersityWidgetUI):
         Translate polydisperse QTable representation into parameter name
         """
         param_name = param_name.replace('Distribution of ', '')
+        param_name = param_name.replace("Discretisation of ", "")
         param_name += '.width'
         return param_name
 
@@ -116,6 +270,10 @@ class PolydispersityWidget(QtWidgets.QWidget, Ui_PolydispersityWidgetUI):
         Callback method for updating the main model and sasmodel
         parameters with the GUI values in the polydispersity view
         """
+        if self.free_form:
+            self.onFreeFormModelChange(top)
+            return
+
         item = self.poly_model.itemFromIndex(top)
         model_column = item.column()
         model_row = item.row()
@@ -533,6 +691,10 @@ class PolydispersityWidget(QtWidgets.QWidget, Ui_PolydispersityWidgetUI):
         Create list of polydisperse parameters based on _poly_model
         """
         param_list = []
+        if self.free_form:
+            # For later use
+
+            return param_list
         param_name = str(self.poly_model.item(row, 0).text()).split()[-1]
         param_checked = str(self.poly_model.item(row, 0).checkState() == QtCore.Qt.Checked)
         param_value = str(self.poly_model.item(row, 1).text())
