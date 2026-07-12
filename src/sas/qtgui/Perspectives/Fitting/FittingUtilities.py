@@ -24,11 +24,6 @@ free_form_column_tooltips = {
     "Min": "Enter minimum value of the discretised range",
     "Max": "Enter maximum value of the discretised range",
     "N bins": "Enter number of discretisation bins over [min, max]",
-    "qx": "Scattering vector x component",
-    "qy": "Scattering vector y component",
-    "Theta": "Particle axis to beam angle",
-    "Phi": "Particle rotation about beam",
-    "drho": "Difference between scattering length densities",
 }
 
 poly_header_tooltips = ['Select parameter for fitting',
@@ -364,9 +359,8 @@ def addPolyHeadersToModel(model):
 
 def addFreeFormHeadersToModel(model, captions):
     """
-    Adds headers for free-form (FFSAS) mode. The caption list is
-    model-specific and comes from the FREE_FORM_MODELS schema and tooltips
-    are looked up per caption.
+    Adds headers for free-form (FFSAS) mode. Tooltips are looked
+    up per caption.
     """
     for i, caption in enumerate(captions):
         model.setHeaderData(i, QtCore.Qt.Horizontal, caption)

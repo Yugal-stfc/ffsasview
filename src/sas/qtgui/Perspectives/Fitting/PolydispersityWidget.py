@@ -22,34 +22,32 @@ DEFAULT_POLYDISP_FUNCTION = 'gaussian'
 DEFAULT_FF_NBINS = 50
 DEFAULT_FF_NBINS_ANGLE = 30
 
-# Each model defines its own table schema:
-#   "columns" - the column captions, in display order.
-#   "rows"    - one entry per discretised parameter. Values map a column
-#               caption to that cell's default; captions without a value
-#               default to an empty cell.
+FF_COLUMNS = ["Parameter", "Min", "Max", "N bins"]
 
-columns = ["Parameter", "Min", "Max", "N bins"]
+FF_ANGLE_ROWS = {
+    "theta": {"Min": 0.0, "Max": 180.0, "N bins": DEFAULT_FF_NBINS_ANGLE},
+    "phi": {"Min": -180.0, "Max": 180.0, "N bins": DEFAULT_FF_NBINS_ANGLE},
+}
 
 FREE_FORM_MODELS = {
     "sphere": {
-        "columns": ["Parameter", "Min", "Max", "N bins", "qx", "qy", "drho"],
         "rows": {
             "radius": {"Min": 1.0, "Max": 1000.0, "N bins": DEFAULT_FF_NBINS},
         },
     },
     "ellipsoid": {
-        "columns": ["Parameter", "Min", "Max", "N bins", "qx", "qy", "Theta", "Phi", "drho"],
         "rows": {
-            "radius_polar": {"Min": 1.0, "Max": 1000.0, "N bins": DEFAULT_FF_NBINS, "Theta": 0.0, "Phi": 0.0},
-            "radius_equatorial": {"Min": 1.0, "Max": 1000.0, "N bins": DEFAULT_FF_NBINS, "Theta": 0.0, "Phi": 0.0},
+            "radius_polar": {"Min": 1.0, "Max": 1000.0, "N bins": DEFAULT_FF_NBINS},
+            "radius_equatorial": {"Min": 1.0, "Max": 1000.0, "N bins": DEFAULT_FF_NBINS},
         },
+        "rows_2d": FF_ANGLE_ROWS,
     },
     "cylinder": {
-        "columns": ["Parameter", "Min", "Max", "N bins", "qx", "qy", "Theta", "Phi", "drho"],
         "rows": {
-            "radius": {"Min": 1.0, "Max": 1000.0, "N bins": DEFAULT_FF_NBINS, "Theta": 0.0, "Phi": 0.0},
-            "length": {"Min": 1.0, "Max": 1000.0, "N bins": DEFAULT_FF_NBINS, "Theta": 0.0, "Phi": 0.0},
+            "radius": {"Min": 1.0, "Max": 1000.0, "N bins": DEFAULT_FF_NBINS},
+            "length": {"Min": 1.0, "Max": 1000.0, "N bins": DEFAULT_FF_NBINS},
         },
+        "rows_2d": FF_ANGLE_ROWS,
     },
 }
 
@@ -159,15 +157,15 @@ class PolydispersityWidget(QtWidgets.QWidget, Ui_PolydispersityWidgetUI):
         model_id = str(getattr(self.logic.kernel_module, "id", "") or "").lower()
         schema = FREE_FORM_MODELS[model_id]
 
-        captions = schema["columns"]
+        captions = FF_COLUMNS
         self.free_form_captions = captions
         self.free_form_params = {}
 
         delegate = self.lstPoly.itemDelegate()
         delegate.poly_parameter = 0
-        delegate.poly_min = captions.index("Min") if "Min" in captions else None
-        delegate.poly_max = captions.index("Max") if "Max" in captions else None
-        delegate.poly_npts = captions.index("N bins") if "N bins" in captions else None
+        delegate.poly_min = captions.index("Min")
+        delegate.poly_max = captions.index("Max")
+        delegate.poly_npts = captions.index("N bins")
         delegate.poly_pd = None
         delegate.poly_nsigs = None
         delegate.poly_function = None
@@ -175,7 +173,11 @@ class PolydispersityWidget(QtWidgets.QWidget, Ui_PolydispersityWidgetUI):
         delegate.poly_error = None
         delegate.free_form_columns = list(range(1, len(captions)))
 
-        for param_name, values in schema["rows"].items():
+        rows = dict(schema["rows"])
+        if self.is2D:
+            rows.update(schema.get("rows_2d", {}))
+
+        for param_name, values in rows.items():
             self.addNameToFreeFormModel(param_name, values, captions)
 
         FittingUtilities.addFreeFormHeadersToModel(self.poly_model, captions)
