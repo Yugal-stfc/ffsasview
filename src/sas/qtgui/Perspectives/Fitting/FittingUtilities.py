@@ -19,13 +19,6 @@ model_header_tooltips = ['Select parameter for fitting',
 poly_header_captions = ['Parameter', 'PD[ratio]', 'Min', 'Max', 'Npts', 'Nsigs',
                         'Function', 'Filename']
 
-free_form_column_tooltips = {
-    "Parameter": "Select parameter to recover a free-form distribution for",
-    "Min": "Enter minimum value of the discretised range",
-    "Max": "Enter maximum value of the discretised range",
-    "N bins": "Enter number of discretisation bins over [min, max]",
-}
-
 poly_header_tooltips = ['Select parameter for fitting',
                         'Enter polydispersity ratio (Std deviation/mean).\n'+
                         'For angles this can be either std deviation or half width (for uniform distributions) in degrees',
@@ -355,17 +348,6 @@ def addPolyHeadersToModel(model):
         model.setHeaderData(i, QtCore.Qt.Horizontal, item)
 
     model.header_tooltips = copy.copy(poly_header_tooltips)
-
-
-def addFreeFormHeadersToModel(model, captions):
-    """
-    Adds headers for free-form (FFSAS) mode. Tooltips are looked
-    up per caption.
-    """
-    for i, caption in enumerate(captions):
-        model.setHeaderData(i, QtCore.Qt.Horizontal, caption)
-
-    model.header_tooltips = [free_form_column_tooltips.get(caption, caption) for caption in captions]
 
 
 def addErrorPolyHeadersToModel(model):
