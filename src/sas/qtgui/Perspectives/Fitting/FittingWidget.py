@@ -588,7 +588,13 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         # Switch the polydispersity tab into/out of free-form mode
         self.polydispersity_widget.setFreeForm(isChecked)
 
+        # Checking free-from resets the model selection.
+        # So restore the model that was selected when the checkbox was toggled.
+        current_model = self.cbModel.currentText()
         self.onSelectCategory()
+        model_index = self.cbModel.findText(current_model)
+        if model_index >= 0:
+            self.cbModel.setCurrentIndex(model_index)
 
     def toggleMagnetism(self, isChecked: bool) -> None:
         """ Enable/disable the magnetism tab """
@@ -1194,6 +1200,14 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
 
         self.chkMagnetism.setEnabled(self.canHaveMagnetism())
         self.tabFitting.setTabEnabled(TAB_MAGNETISM, self.chkMagnetism.isChecked() and self.canHaveMagnetism())
+
+        # Free-form is only available once a supported model is selected
+        if model.lower() in FREE_FORM_MODELS:
+            self.chkFreeForm.setEnabled(True)
+        else:
+            self.chkFreeForm.setChecked(False)
+            self.chkFreeForm.setEnabled(False)
+
         self._previous_model_index = self.cbModel.currentIndex()
 
         # Reset parameters to fit
@@ -1420,9 +1434,10 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
                 self.cbCategory.blockSignals(False)
             return
 
-        # supported Categories for free-form
+        # Supported models for free-form
         if any(key in category.lower() for key in FREE_FORM_MODELS):
-            self.chkFreeForm.setEnabled(True)
+            if not self.chkFreeForm.isChecked():
+                self.chkFreeForm.setEnabled(False)
         else:
             self.chkFreeForm.setChecked(False)
             self.chkFreeForm.setEnabled(False)
