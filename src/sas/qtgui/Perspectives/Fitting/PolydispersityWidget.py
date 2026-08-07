@@ -141,6 +141,21 @@ class PolydispersityWidget(QtWidgets.QWidget, Ui_PolydispersityWidgetUI):
         param_name += '.width'
         return param_name
 
+    def freeFormBins(self) -> dict[str, tuple[float, float, int]]:
+        """
+        Free-form discretisation from the table: {param_name: (min, max, nbins)}
+        """
+        delegate = self.lstPoly.itemDelegate()
+        bins = {}
+        for row in range(self.poly_model.rowCount()):
+            name = str(self.poly_model.item(row, 0).text())
+            name = name.replace("Distribution of ", "").replace("Discretisation of ", "")
+            lo = GuiUtils.toDouble(self.poly_model.item(row, delegate.poly_min).text())
+            hi = GuiUtils.toDouble(self.poly_model.item(row, delegate.poly_max).text())
+            nbins = int(GuiUtils.toDouble(self.poly_model.item(row, delegate.poly_npts).text()))
+            bins[name] = (lo, hi, nbins)
+        return bins
+
     def getParamNamesPoly(self) -> list[str]:
         """
         Return list of polydisperse parameters for the current model
@@ -313,6 +328,12 @@ class PolydispersityWidget(QtWidgets.QWidget, Ui_PolydispersityWidgetUI):
 
         all_items = self.poly_model.rowCount()
         self.poly_model.item(all_items-1,0).setData(param_wname, role=QtCore.Qt.UserRole)
+
+        # Free-form always discretises this parameter, so there is nothing to
+        # fit-select: grey out the checkbox (Min/Max/N bins stay editable) in
+        # the polydispersity tab.
+        if self.free_form:
+            self.poly_model.item(all_items-1, 0).setEnabled(False)
 
         # All possible polydisp. functions as strings in combobox
         func = QtWidgets.QComboBox()

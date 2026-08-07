@@ -88,3 +88,6 @@ tests.log
 /installers/dist
 *.exe
 installers/credits.html
+
+# plots
+*.png
