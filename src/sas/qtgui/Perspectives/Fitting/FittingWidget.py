@@ -582,19 +582,15 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         self.cmdFit.setEnabled(self.haveParamsToFit())
 
     def toggleFreeForm(self, isChecked: bool) -> None:
-        self.chkPolydispersity.setEnabled(True)
+        self.chkPolydispersity.setEnabled(not isChecked)
         self.chkPolydispersity.setChecked(isChecked)
 
         # Switch the polydispersity tab into/out of free-form mode
         self.polydispersity_widget.setFreeForm(isChecked)
 
-        # Checking free-from resets the model selection.
-        # So restore the model that was selected when the checkbox was toggled.
-        current_model = self.cbModel.currentText()
-        self.onSelectCategory()
-        model_index = self.cbModel.findText(current_model)
-        if model_index >= 0:
-            self.cbModel.setCurrentIndex(model_index)
+        # Free-form fits a fixed set (scale/background) and always discretises,
+        # so grey out the per-parameter fit checkboxes in the model pane.
+        self.applyFreeFormCheckboxLock()
 
     def toggleMagnetism(self, isChecked: bool) -> None:
         """ Enable/disable the magnetism tab """
@@ -1201,8 +1197,8 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         self.chkMagnetism.setEnabled(self.canHaveMagnetism())
         self.tabFitting.setTabEnabled(TAB_MAGNETISM, self.chkMagnetism.isChecked() and self.canHaveMagnetism())
 
-        # Free-form is only available once a supported model is selected
-        if model.lower() in FREE_FORM_MODELS:
+        # Free-form is only available once a supported model is selected and no structure factor is active
+        if model.lower() in FREE_FORM_MODELS and str(self.cbStructureFactor.currentText()) == STRUCTURE_DEFAULT:
             self.chkFreeForm.setEnabled(True)
         else:
             self.chkFreeForm.setChecked(False)
@@ -1228,7 +1224,8 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
 
         # disable polydispersity if the model does not support it
         has_poly = self.polydispersity_widget.poly_model.rowCount() != 0
-        self.chkPolydispersity.setEnabled(has_poly)
+        # in free-form mode polydispersity is forced on and locked
+        self.chkPolydispersity.setEnabled(has_poly and not self.polydispersity_widget.free_form)
         # self.tabFitting.setTabEnabled(TAB_POLY, has_poly)
 
         # set focus so it doesn't move up
@@ -1263,6 +1260,14 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         self.magnetism_widget.has_magnet_error_column = False
 
         self.respondToModelStructure(model=model, structure_factor=structure)
+
+        # Free-form doesn't support structure factors yet
+        if structure != STRUCTURE_DEFAULT:
+            self.chkFreeForm.setChecked(False)
+            self.chkFreeForm.setEnabled(False)
+        elif model and model.lower() in FREE_FORM_MODELS:
+            self.chkFreeForm.setEnabled(True)
+
         # recast the original parameters into the model
         self.clipboard_paste()
         # revert to the original clipboard
@@ -1700,6 +1705,13 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
             return
         res_list = result[0][0]
         res = res_list[0]
+
+        # Free-form (ffsi) results carry their own theory/distributions and
+        # cannot be recomputed by the kernel, so they complete separately.
+        if hasattr(res, "freeform"):
+            self.fitCompleteFreeForm(res, result[1])
+            return
+
         self.chi2 = res.fitness
         param_dict = self.fitting_controller.paramDictFromResults(res)
 
@@ -1732,6 +1744,37 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         chi2_repr = GuiUtils.formatNumber(self.chi2, high=True)
         self.lblChi2Value.setText(chi2_repr)
 
+    def fitCompleteFreeForm(self, res: Any, elapsed: float) -> None:
+        """
+        Display results of a free-form (ffsi) inversion.
+
+        Unlike a bumps fit the intensity comes from the backend rather than the
+        kernel.
+        Kernel cannot reproduce it (the scattering tensor lives inside ffsi).
+        """
+        self.chi2 = res.fitness
+        self.fitResults = True
+
+        msg = "Free-form inversion completed in: %s s." % GuiUtils.formatNumber(elapsed)
+        self.communicator.statusBarUpdateSignal.emit(msg)
+
+        # Write fitted scale/background back to the parameter table
+        param_dict = self.fitting_controller.paramDictFromResults(res)
+        if param_dict is None:
+            return
+        self.fitting_controller.updateModelFromList(param_dict)
+
+        # Hand the backend result to complete1D/complete2D: the 1D/2D dispatch,
+        # Q-range sliders, residuals, weighting and plot bookkeeping are shared.
+        return_data = self.logic.freeFormReturnData(res.freeform, self.tab_id)
+        self.methodCompleteForData()(return_data)
+
+        # complete1D/2D only refresh windows that are already open, so open the
+        # rest. Has to run after them, since it looks the plots up in the tree.
+        self.showPlot()
+
+        chi2_repr = GuiUtils.formatNumber(self.chi2, high=True)
+        self.lblChi2Value.setText(chi2_repr)
 
     def prepareFitters(self, fitter: Fit | None = None, fit_id: int = 0, weight_increase: int = 1) -> tuple[list[Fit], int]:
         """
@@ -2128,6 +2171,9 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
                 self._model_model,
                 self.lstParams)
 
+        # Re-apply the free-form lock on checkboxes after a rebuild from switching models.
+        self.applyFreeFormCheckboxLock()
+
     def fromStructureFactorToQModel(self, structure_factor: str) -> None:
         """
         Setting model parameters into QStandardItemModel based on selected structure factor
@@ -2225,6 +2271,8 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         if not self.logic.data_is_loaded:
             return False
         if self.main_params_to_fit:
+            return True
+        if self.chkPolydispersity.isChecked() and self.polydispersity_widget.free_form:
             return True
         if self.chkPolydispersity.isChecked() and self.polydispersity_widget.poly_params_to_fit:
             return True
@@ -2356,6 +2404,19 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         if model.item(row,0) is None:
             return False
         return model.item(row, 0).isCheckable()
+
+    def applyFreeFormCheckboxLock(self) -> None:
+        """
+        In free-form we fit over a fixed set of parameters.
+        Per-parameter fit checkboxes in the model pane have
+        no effect so grey it out.
+        """
+        lock = self.polydispersity_widget.free_form
+        for row in range(self._model_model.rowCount()):
+            item = self._model_model.item(row, 0)
+            # only fittable parameters carry a checkbox; skip headings/fixed rows
+            if item is not None and item.isCheckable():
+                item.setEnabled(not lock)
 
     def changeCheckboxStatus(self, row: int, checkbox_status: bool, model_key: str = "standard") -> None:
         """
@@ -2570,7 +2631,12 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         Internal helper for 1D and 2D for creating plots of the polydispersity distribution for
         parameters which have a polydispersity enabled
         """
-        for plot in FittingUtilities.plotPolydispersities(return_data.get('model', None)):
+        plots = FittingUtilities.plotPolydispersities(return_data.get("model", None))
+        if return_data.get("freeform") is not None:
+            # free-form inversion brings its own distribution rather than one
+            # derived from the kernel.
+            plots.append(self.logic.newDistributionPlot(return_data["freeform"], self.tab_id))
+        for plot in plots:
             data_id = fitted_data.id.split()
             plot.id = "{} [{}] {}".format(data_id[0], plot.name, " ".join(data_id[1:]))
             data_name = fitted_data.name.split()
@@ -2605,6 +2671,10 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         # SESANS residuals should be on lin-lin scale
         if return_data["data"].isSesans:
             residuals.plot_role = DataRole.ROLE_RESIDUAL_SESANS
+
+        # Free-form residuals match ffsi's reference plot
+        if residuals is not None and return_data.get("freeform") is not None:
+            self._styleFreeFormResiduals(residuals)
 
         fitted_data.show_q_range_sliders = True
         # Suppress the GUI update until the move is finished to limit model calculations
@@ -2741,6 +2811,13 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         residuals_plot.plot_role = DataRole.ROLE_RESIDUAL
         self.createNewIndex(residuals_plot)
         return residuals_plot
+
+    def _styleFreeFormResiduals(self, residuals_plot: Data1D) -> None:
+        """
+        Restyle to match ffsi's reference plot.
+        """
+        residuals_plot.y = -residuals_plot.y
+        residuals_plot.xtransform = "log10(x)"
 
     def onCategoriesChanged(self) -> None:
             """
