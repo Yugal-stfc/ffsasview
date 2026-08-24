@@ -32,7 +32,7 @@ from sas.qtgui.Perspectives.Fitting.ModelThread import Calc1D, Calc2D
 from sas.qtgui.Perspectives.Fitting.OptionsWidget import OptionsWidget
 from sas.qtgui.Perspectives.Fitting.OrderWidget import OrderWidget
 from sas.qtgui.Perspectives.Fitting.ParameterListWidget import ParameterListWidget
-from sas.qtgui.Perspectives.Fitting.PolydispersityWidget import FREE_FORM_MODELS, PolydispersityWidget
+from sas.qtgui.Perspectives.Fitting.PolydispersityWidget import PolydispersityWidget
 from sas.qtgui.Perspectives.Fitting.ReportPageLogic import ReportPageLogic
 from sas.qtgui.Perspectives.Fitting.SmearingWidget import SmearingWidget
 from sas.qtgui.Perspectives.Fitting.UI.FittingWidgetUI import Ui_FittingWidgetUI
@@ -43,6 +43,7 @@ from sas.qtgui.Utilities.BackgroundColor import BG_DEFAULT, BG_ERROR
 from sas.qtgui.Utilities.CategoryInstaller import CategoryInstaller
 from sas.sascalc.fit import models
 from sas.sascalc.fit.BumpsFitting import BumpsFit as Fit
+from sas.sascalc.fit.FreeFormFitting import SUPPORTED_MODELS as FREE_FORM_MODELS
 from sas.system import HELP_SYSTEM
 from sas.system.user import find_plugins_dir
 
@@ -2652,9 +2653,9 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         """
         plots = FittingUtilities.plotPolydispersities(return_data.get("model", None))
         if return_data.get("freeform") is not None:
-            # free-form inversion brings its own distribution rather than one
-            # derived from the kernel.
-            plots.append(self.logic.newDistributionPlot(return_data["freeform"], self.tab_id))
+            # free-form inversion brings its own distribution(s) rather than one
+            # derived from the kernel
+            plots.extend(self.logic.newDistributionPlots(return_data["freeform"], self.tab_id))
         for plot in plots:
             data_id = fitted_data.id.split()
             plot.id = f"{data_id[0]} [{plot.name} polydispersity] {' '.join(data_id[1:])}"

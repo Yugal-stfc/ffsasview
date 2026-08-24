@@ -19,10 +19,6 @@ from sas.qtgui.Perspectives.Fitting.ViewDelegate import PolyViewDelegate
 
 DEFAULT_POLYDISP_FUNCTION = 'gaussian'
 
-# Models supporting free-form (FFSAS) fitting. Free-form reuses the standard
-# polydispersity table, with the columns that don't apply hidden.
-FREE_FORM_MODELS = {"sphere", "ellipsoid", "cylinder"}
-
 logger = logging.getLogger(__name__)
 
 class PolydispersityWidget(QtWidgets.QWidget, Ui_PolydispersityWidgetUI):

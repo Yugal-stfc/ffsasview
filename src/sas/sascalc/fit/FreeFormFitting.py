@@ -1,38 +1,55 @@
 """
-FreeFormFitting module runs free-form SAS inversion via the external `ffsi`
-package (GALAHAD SNLS solver). Basic showcase: sphere model, 1D data.
+FreeFormFitting is the SasView-side adapter for free-form SAS inversion. All
+of the numerics live in the external `ffsi` package, reached through its public
+API `ffsi.models.api.invert()`; this module only translates between SasView's
+model / data objects and that API. The model is taken from the GUI selection;
+every model ffsi supports is handled (see FREE_FORM_PARAM_MAP). 1D data.
 
 This is a sibling of BumpsFitting: a FitEngine subclass returning FResult
 objects through the same FitThread pipeline, so the GUI drives it exactly
-like a bumps fit. The optimizer is not bumps -- ffsi solves for
-the full radius distribution (bin weights on a simplex, smoothness-
-regularized) in a single constrained solve.
+like a bumps fit. The optimizer is not bumps -- ffsi solves for the full
+parameter distribution(s) (bin weights on a simplex, smoothness-regularized)
+in a single constrained solve.
 """
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
-
-import numpy as np
+from typing import TYPE_CHECKING
 
 from sas.sascalc.fit.AbstractFitEngine import FitEngine, FResult
+
+if TYPE_CHECKING:
+    import numpy as np
 
 logger = logging.getLogger(__name__)
 
 try:
-    from ffsi.models import Sphere
-    from ffsi.optimize_galahad import optimize as ffsi_optimize
-    from ffsi.utils import contract_tensor
+    from ffsi.models.api import invert
     FFSI_AVAILABLE = True
 except ImportError as exc:
     FFSI_AVAILABLE = False
     _FFSI_IMPORT_ERROR = str(exc)
     logger.info("ffsi not available, free-form inversion disabled: %s", exc)
 
+# TODO: Add an input box for this value
 DEFAULT_SIGMA = 0.25
 
-# Free-form is a sphere-only for now for the
-# basic showcase of the free-form sas inversion.
-SUPPORTED_MODEL = "sphere"
 FREE_FORM_FIT_PARAMS = ["scale", "background"]
+
+# Per model, the {SasView parameter name: ffsi parameter name} translation the
+# API needs. ffsi keys its grids and distributions by its own short names
+# ('r', 'l', 'rp', 're'); the GUI and its polydispersity table speak SasView's
+# names. Only the geometric parameters ffsi inverts appear here; any other rows
+# in the table (e.g. the orientation angles theta/phi) are ignored.
+FREE_FORM_PARAM_MAP = {
+    "sphere": {"radius": "r"},
+    "cylinder": {"radius": "r", "length": "l"},
+    "ellipsoid": {"radius_polar": "rp", "radius_equatorial": "re"},
+}
+
+# Models free-form inversion can handle (those ffsi supports).
+SUPPORTED_MODELS = frozenset(FREE_FORM_PARAM_MAP)
 
 
 def model_id(model):
@@ -41,64 +58,113 @@ def model_id(model):
 
 
 def is_supported(model):
-    """True if free-form inversion can handle this model (sphere only)"""
-    return model_id(model) == SUPPORTED_MODEL
+    """True if free-form inversion can handle this model."""
+    return model_id(model) in SUPPORTED_MODELS
+
+
+@dataclass
+class FreeFormDistribution:
+    """One fitted parameter distribution, named in SasView terms."""
+
+    param: str  # SasView parameter name, e.g. 'radius', 'length'
+    grid: np.ndarray  # bin centers
+    weights: np.ndarray  # distribution weights (sum to 1)
+    # volume-weighted distribution; single-parameter models only, else None
+    volume_weights: np.ndarray = None
 
 
 @dataclass
 class FreeFormResult:
-    """Output of one sphere inversion."""
-    scale: float          # SasView sphere scale (volume fraction), converted from xi
-    xi: float             # raw ffsi scale: I_opt = xi * Gw + background
-    background: float     # b_opt
-    r: np.ndarray         # radius bin centers
-    w: np.ndarray         # radius distribution weights
-    q: np.ndarray         # masked q the inversion ran on
-    theory: np.ndarray    # I_opt = xi * Gw + background on q
-
-
-def invert_sphere(q, iq, diq, r_min, r_max, n_bins, sigma=DEFAULT_SIGMA, drho=1.0):
     """
-    Free-form sphere inversion: the body of ffsi's
-    sas_inversion_sphere_real_data.py minus file I/O and plotting.
+    Output of one inversion: a SasView-side view of an
+    `ffsi.models.api.InversionResult`, carrying only what the GUI plots and the fit
+    engine reports. Distributions are named with SasView parameter names.
+    """
 
-    ffsi convention drho = 1
+    scale: float  # SasView scale (volume fraction) = xi * <V> * 1e4
+    xi: float  # raw ffsi scale: I_opt = xi * Gw + background
+    background: float  # b_opt
+    q: np.ndarray  # masked q the inversion ran on
+    theory: np.ndarray  # I_opt = xi * Gw + background on q
+    residuals: np.ndarray  # (theory - iq) / diq
+    chi2: float  # sum(residuals**2) / residuals.size
+    distributions: list  # list[FreeFormDistribution]
+
+    def distribution(self, param):
+        """The `FreeFormDistribution` for SasView parameter `param`."""
+        for dist in self.distributions:
+            if dist.param == param:
+                return dist
+        raise KeyError(
+            "No distribution for parameter '%s', have: %s" % (param, ", ".join(d.param for d in self.distributions))
+        )
+
+
+def invert_shape(model_name, q, iq, diq, bins, sigma=DEFAULT_SIGMA, sld=None, sld_solvent=None):
+    """
+    Free-form inversion of any supported model, delegated to `ffsi.models.api.invert`.
+
+    :param model_name: SasView/ffsi model id (see `SUPPORTED_MODELS`)
+    :param bins: `dict` of `{SasView parameter name: (min, max, nbins)}`
+
+    The contrast (`sld`, `sld_solvent`) is passed straight through: the API
+    builds the Green's tensor with `drho = sld - sld_solvent` baked in and
+    returns `scale` as a SasView volume fraction directly.
     """
     if not FFSI_AVAILABLE:
         raise RuntimeError("ffsi is not installed: %s" % _FFSI_IMPORT_ERROR)
+    try:
+        name_map = FREE_FORM_PARAM_MAP[model_name]  # SasView -> ffsi
+    except KeyError:
+        raise ValueError(
+            "Free-form inversion does not support the '%s' model (supported: %s)."
+            % (model_name, ", ".join(sorted(SUPPORTED_MODELS)))
+        ) from None
+    ffsi_to_sasview = {ffsi_name: sv for sv, ffsi_name in name_map.items()}
 
-    q = np.ascontiguousarray(q, dtype=float)
-    iq = np.asarray(iq, dtype=float)
-    diq = np.asarray(diq, dtype=float)
-    r = np.linspace(float(r_min), float(r_max), int(n_bins))
+    # Translate the SasView-named bins into the ffsi names the API expects,
+    # keeping only the geometric parameters the model inverts.
+    grids = {name_map[sv]: spec for sv, spec in bins.items() if sv in name_map}
+    missing = set(name_map.values()) - set(grids)
+    if missing:
+        raise ValueError(
+            "No bin specification for parameter(s): %s." % ", ".join(sorted(ffsi_to_sasview[m] for m in missing))
+        )
 
-    # Solve with the ffsi convention drho = 1
-    # TODO: generalise invert_shape beyond the sphere
-    green = Sphere.compute_scattering_intensity([q], [r], 1.0)
-    xi, background, w_list = ffsi_optimize(green, iq, diq, sigma=sigma)
-    w = np.asarray(w_list[0])
+    # q is passed through as-is; invert() owns the backend/dtype conversion
+    # (ffsi picks numpy vs cupy from the input arrays), keeping this adapter
+    # free of a direct numpy dependency.
+    result = invert(model_name, q, iq, diq, grids, sld=sld, sld_solvent=sld_solvent, sigma=sigma)
 
-    theory = float(xi) * np.asarray(contract_tensor(green, [w], skip_axes=[0])) + float(background)
-
-    # Convert ffsi's raw xi to a SasView sphere scale (volume fraction).
-    #   scale = xi * <V> * 1e4 / drho^2,  <V> = sum_k w_k (4/3 pi r_k^3).
-    avg_volume = float(Sphere.compute_average_volume([r], [w]))
-    scale = float(xi) * avg_volume * 1e4 / float(drho) ** 2
-
-    return FreeFormResult(scale=scale, xi=float(xi), background=float(background),
-                          r=r, w=w, q=q, theory=theory)
+    distributions = [
+        FreeFormDistribution(
+            param=ffsi_to_sasview[d.name], grid=d.grid, weights=d.weights, volume_weights=d.volume_weights
+        )
+        for d in result.distributions
+    ]
+    return FreeFormResult(
+        scale=result.scale,
+        xi=result.xi,
+        background=result.background,
+        q=q,
+        theory=result.theory,
+        residuals=result.residuals,
+        chi2=result.chi2,
+        distributions=distributions,
+    )
 
 
 class FreeFormFit(FitEngine):
     """
-    Fit a radius distribution to the data using free-form inversion (ffsi).
+    Fit parameter distribution(s) to the data using free-form inversion (ffsi).
 
     Driven through the same interface as BumpsFit: set_model()/set_data()
     from the FitEngine base class, then fit() from a FitThread.
     """
     def __init__(self, bins=None, sigma=DEFAULT_SIGMA):
         """
-        :param bins: dict {parameter name: (min, max, nbins)}; needs 'radius'
+        :param bins: dict {SasView parameter name: (min, max, nbins)}; must
+            cover the model's geometric parameters (see FREE_FORM_PARAM_MAP)
         :param sigma: smoothness regularization weight
         """
         FitEngine.__init__(self)
@@ -119,39 +185,54 @@ class FreeFormFit(FitEngine):
             if not arrange.get_to_fit():
                 continue
             if curr_thread is not None:
-                curr_thread.isquit()   # raises KeyboardInterrupt on stop
+                curr_thread.isquit()  # raises KeyboardInterrupt on stop
 
-            model = arrange.get_model().model     # the SasviewModel
+            model = arrange.get_model().model  # the SasviewModel
+            model_name = model_id(model)
             if not is_supported(model):
-                raise ValueError("Free-form inversion only supports the %s model." % SUPPORTED_MODEL)
-            if 'radius' not in self.bins:
-                raise ValueError("No bin specification for parameter 'radius'.")
+                raise ValueError(
+                    "Free-form inversion does not support the '%s' model (supported: %s)."
+                    % (model_name, ", ".join(sorted(SUPPORTED_MODELS)))
+                )
 
-            # Contrast for converting ffsi's xi into a SasView volume-fraction scale
-            # only used to report the correct scaled Scale to the model pane.
-            drho = model.getParam('sld') - model.getParam('sld_solvent')
+            # The contrast lets the API return `scale` as a SasView volume
+            # fraction. Without it (sld == sld_solvent) there is nothing to
+            # report to the model pane.
+            sld = model.getParam("sld")
+            sld_solvent = model.getParam("sld_solvent")
+            if sld == sld_solvent:
+                raise ValueError("Free-form inversion needs a non-zero contrast (sld must differ from sld_solvent).")
 
             fitdata = arrange.get_data()          # FitData1D
             idx = fitdata.idx
-            r_min, r_max, n_bins = self.bins['radius']
-            result = invert_sphere(fitdata.x[idx], fitdata.y[idx], fitdata.dy[idx],
-                                   r_min, r_max, n_bins, sigma=self.sigma, drho=drho)
+            result = invert_shape(
+                model_name,
+                fitdata.x[idx],
+                fitdata.y[idx],
+                fitdata.dy[idx],
+                self.bins,
+                sigma=self.sigma,
+                sld=sld,
+                sld_solvent=sld_solvent,
+            )
 
             fitting_result = FResult(model=model, data=fitdata,
                               param_list=list(FREE_FORM_FIT_PARAMS))
             fitting_result.theory = result.theory
-            fitting_result.residuals = (result.theory - fitdata.y[idx]) / fitdata.dy[idx]
+            # residuals and chi2 come straight from the API (ffsi's
+            # (theory - iq)/diq convention, chi2 = sum(res**2)/Npts, matching
+            # SasView's calculateChi2).
+            fitting_result.residuals = result.residuals
             fitting_result.index = idx
             fitting_result.fitter_id = self.fitter_id
             fitting_result.success = True
             fitting_result.mesg = ''
-            fitting_result.pvec = np.array([result.scale, result.background])
+            fitting_result.pvec = [result.scale, result.background]
             # GALAHAD returns no uncertainties
-            fitting_result.stderr = np.zeros(2)
-            # chi2 = sum(res**2)/res.size, matching ffsi's reference and SasView's calculateChi2.
-            n_pts = max(1, int(np.sum(idx)))
-            fitting_result.fitness = float(np.sum(fitting_result.residuals ** 2) / n_pts)
-            fitting_result.convergence = np.empty((0, 1), 'd')
+            fitting_result.stderr = [0.0, 0.0]
+            fitting_result.fitness = result.chi2
+            # no convergence trace; empty keeps the convergence tab from opening
+            fitting_result.convergence = []
             fitting_result.freeform = result
             all_results.append(fitting_result)
 

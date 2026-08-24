@@ -167,7 +167,7 @@ class FittingController:
         from sas.sascalc.fit.FreeFormFitting import (
             FFSI_AVAILABLE,
             FREE_FORM_FIT_PARAMS,
-            SUPPORTED_MODEL,
+            SUPPORTED_MODELS,
             FreeFormFit,
             is_supported,
         )
@@ -177,7 +177,8 @@ class FittingController:
 
         model = self.logic.kernel_module
         if not is_supported(model):
-            raise ValueError("Free-form SAS inversion only supports the %s model for now." % SUPPORTED_MODEL)
+            raise ValueError("Free-form SAS inversion supports only the following models: %s."
+                             % ", ".join(sorted(SUPPORTED_MODELS)))
         if self.widget.smearing_widget.smearer() is not None:
             logger.warning("Free-form inversion ignores the smearing settings.")
 

@@ -244,37 +244,41 @@ class FittingLogic:
             return_data["y"] = result.theory
         return return_data
 
-    def newDistributionPlot(self, result, tab_id):
+    def newDistributionPlots(self, result, tab_id):
         """
-        Create the free-form weight distribution plot.
+        Create the free-form weight distribution plot(s), one per inverted
+        parameter (radius, length, ...).
         New function because a completely new kind of plot that sasview doesn't support.
 
-        Name and id are placeholders, completed by _appendPlotsPolyDisp() in the
+        Names and ids are placeholders, completed by _appendPlotsPolyDisp() in the
         same way as the plots from FittingUtilities.plotPolydispersities().
         """
-        # the inversion is sphere/radius only for now, as is FreeFormFit
-        name = "radius"
-        # Match ffsi's reference (plotting.plot_sphere_distribution with
-        # normalize_by_volume=True): show the volume-weighted distribution as a
-        # percentage, w * r^3 / sum(w * r^3) * 100.
-        w_vol = result.w * result.r**3
-        w_vol = w_vol / np.sum(w_vol) * 100
-        new_plot = Data1D(x=result.r, y=w_vol)
-        new_plot.is_data = False
-        new_plot.dy = np.zeros(len(w_vol))
-        new_plot.xtransform = "x"
-        new_plot.ytransform = "y"
-        new_plot.xaxis(rf"\rm{{{name}}}", self.kernel_module.details[name][0])
-        # escape the percent sign: '%' is a comment char in matplotlib mathtext
-        new_plot.yaxis(r"\rm{weight}", r"\%")
-        new_plot.scale = "linear"
-        new_plot.symbol = "Line"
-        new_plot.name = "%s distribution" % name
-        new_plot.id = new_plot.name
-        # stand-alone: own window on linear axes, and not culled by
-        # deleteRedundantPlots(), which only removes ROLE_DELETABLE items
-        new_plot.plot_role = DataRole.ROLE_STAND_ALONE
-        return new_plot
+        plots = []
+        for dist in result.distributions:
+            name = dist.param
+            # Match ffsi's reference (plotting.plot_*_distribution with
+            # normalize_by_volume=True): show the volume-weighted distribution as
+            # a percentage where it is defined (single-parameter models), else
+            # the plain weight distribution.
+            weights = dist.volume_weights if dist.volume_weights is not None else dist.weights
+            y = weights / np.sum(weights) * 100
+            new_plot = Data1D(x=dist.grid, y=y)
+            new_plot.is_data = False
+            new_plot.dy = np.zeros(len(y))
+            new_plot.xtransform = "x"
+            new_plot.ytransform = "y"
+            new_plot.xaxis(rf"\rm{{{name}}}", self.kernel_module.details[name][0])
+            # escape the percent sign: '%' is a comment char in matplotlib mathtext
+            new_plot.yaxis(r"\rm{weight}", r"\%")
+            new_plot.scale = "linear"
+            new_plot.symbol = "Line"
+            new_plot.name = "%s distribution" % name
+            new_plot.id = new_plot.name
+            # stand-alone: own window on linear axes, and not culled by
+            # deleteRedundantPlots(), which only removes ROLE_DELETABLE items
+            new_plot.plot_role = DataRole.ROLE_STAND_ALONE
+            plots.append(new_plot)
+        return plots
 
     def getScalarIntermediateResults(self, return_data):
         """
