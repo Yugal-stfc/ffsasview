@@ -1,7 +1,7 @@
 """
 FreeFormFitting is the SasView-side adapter for free-form SAS inversion. All
 of the numerics live in the external `ffsi` package, reached through its public
-API `ffsi.models.api.invert()`; this module only translates between SasView's
+API `ffsi.api.invert()`; this module only translates between SasView's
 model / data objects and that API. The model is taken from the GUI selection;
 every model ffsi supports is handled (see FREE_FORM_PARAM_MAP). 1D data.
 
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 try:
-    from ffsi.models.api import invert
+    from ffsi.api import invert
     FFSI_AVAILABLE = True
 except ImportError as exc:
     FFSI_AVAILABLE = False
@@ -77,7 +77,7 @@ class FreeFormDistribution:
 class FreeFormResult:
     """
     Output of one inversion: a SasView-side view of an
-    `ffsi.models.api.InversionResult`, carrying only what the GUI plots and the fit
+    `ffsi.api.InversionResult`, carrying only what the GUI plots and the fit
     engine reports. Distributions are named with SasView parameter names.
     """
 
@@ -102,7 +102,7 @@ class FreeFormResult:
 
 def invert_shape(model_name, q, iq, diq, bins, sigma=DEFAULT_SIGMA, sld=None, sld_solvent=None):
     """
-    Free-form inversion of any supported model, delegated to `ffsi.models.api.invert`.
+    Free-form inversion of any supported model, delegated to `ffsi.api.invert`.
 
     :param model_name: SasView/ffsi model id (see `SUPPORTED_MODELS`)
     :param bins: `dict` of `{SasView parameter name: (min, max, nbins)}`

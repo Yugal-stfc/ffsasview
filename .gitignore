@@ -12,12 +12,6 @@
 # stack dumps due to Git Bash internal crashes
 *.stackdump
 
-#dev stuff
-*.sh
-*.txt
-.local_bin/
-.pip_packages/
-
 # Editor files
 *.pyproj
 *.sln
@@ -88,6 +82,3 @@ tests.log
 /installers/dist
 *.exe
 installers/credits.html
-
-# plots
-*.png
