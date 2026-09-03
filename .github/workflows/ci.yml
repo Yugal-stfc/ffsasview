@@ -381,7 +381,7 @@ jobs:
         # free-form inversion is disabled in the built app. See installers/sasview.spec.
         if: ${{ matrix.installer }}
         run: |
-          uv pip install ffsi
+          uv pip install "git+https://github.com/ralna/free-form-sas-inversion.git@build-release-test"
 
       - name: Install utilities to build installer
         if: ${{ matrix.installer }}
