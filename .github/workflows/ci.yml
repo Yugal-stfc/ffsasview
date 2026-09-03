@@ -375,6 +375,14 @@ jobs:
 
       ### Build the installer
 
+      - name: Install free-form inversion backend (ffsi + GALAHAD)
+        # ffsi is not a sasview dependency; install it here so PyInstaller bundles
+        # it (and its galahad-optrove wheel) into the installer. Not installed,
+        # free-form inversion is disabled in the built app. See installers/sasview.spec.
+        if: ${{ matrix.installer }}
+        run: |
+          uv pip install ffsi
+
       - name: Install utilities to build installer
         if: ${{ matrix.installer }}
         run: |

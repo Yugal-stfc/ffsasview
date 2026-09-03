@@ -6,6 +6,8 @@ import warnings
 import platform
 import sysconfig
 
+from PyInstaller.utils.hooks import collect_submodules
+
 block_cipher = None
 PYTHON_PACKAGES = sysconfig.get_path('platlib')
 
@@ -55,6 +57,16 @@ hiddenimports = [
     'debugpy._vendored',
     'tccbox',
 ]
+
+# ffsi (free-form inversion backend) loads its models via dynamic import, which
+# PyInstaller can't trace; collect them so free-form works in the frozen app.
+# Its GALAHAD solver is a normal static import and is pulled in automatically.
+# Guarded so a build without ffsi still succeeds (e.g. upstream SasView CI).
+try:
+    import ffsi  # noqa: F401
+    hiddenimports += collect_submodules('ffsi')
+except ImportError:
+    warnings.warn("ffsi not available; free-form inversion will not be included")
 
 hooksconfig = {
     "matplotlib": {
