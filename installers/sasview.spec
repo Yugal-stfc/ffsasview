@@ -58,10 +58,8 @@ hiddenimports = [
     'tccbox',
 ]
 
-# ffsi (free-form inversion backend) loads its models via dynamic import, which
-# PyInstaller can't trace; collect them so free-form works in the frozen app.
-# Its GALAHAD solver is a normal static import and is pulled in automatically.
-# Guarded so a build without ffsi still succeeds (e.g. upstream SasView CI).
+# import free-form if available
+# won't be included in the build if unavailable
 try:
     import ffsi  # noqa: F401
     hiddenimports += collect_submodules('ffsi')
