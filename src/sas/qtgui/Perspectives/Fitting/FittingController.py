@@ -179,12 +179,11 @@ class FittingController:
         if not is_supported(model):
             raise ValueError("Free-form SAS inversion supports only the following models: %s."
                              % ", ".join(sorted(SUPPORTED_MODELS)))
-        if self.widget.smearing_widget.smearer() is not None:
-            logger.warning("Free-form inversion ignores the smearing settings.")
 
         bins = self.widget.polydispersity_widget.freeFormBins()
         qmin = self.widget.q_range_min
         qmax = self.widget.q_range_max
+        smearer = self.widget.smearing_widget.smearer()
 
         fitters = []
         for fit_index in self.widget.all_data:
@@ -195,7 +194,7 @@ class FittingController:
                 fitter_single.set_model(model, fit_id, list(FREE_FORM_FIT_PARAMS), data=weighted_data, constraints=[])
             except ValueError as ex:
                 raise ValueError("Setting model parameters failed with: %s" % ex)
-            fitter_single.set_data(data=weighted_data, id=fit_id, smearer=None, qmin=qmin, qmax=qmax)
+            fitter_single.set_data(data=weighted_data, id=fit_id, smearer=smearer, qmin=qmin, qmax=qmax)
             fitter_single.select_problem_for_fit(id=fit_id, value=1)
             fitter_single.fitter_id = [self.widget.page_id]
             fit_id += 1

@@ -100,16 +100,28 @@ class FreeFormResult:
         )
 
 
-def invert_shape(model_name, q, iq, diq, bins, sigma=DEFAULT_SIGMA, sld=None, sld_solvent=None):
+def invert_shape(
+    model_name, q, iq, diq, bins, sigma=DEFAULT_SIGMA, sld=None, sld_solvent=None, q_calc=None, resolution_weights=None
+):
     """
     Free-form inversion of any supported model, delegated to `ffsi.api.invert`.
 
     :param model_name: SasView/ffsi model id (see `SUPPORTED_MODELS`)
+    :param q: masked scattering vectors
+    :param iq: measured intensity I(q)
+    :param diq: intensity errors dI(q)
     :param bins: `dict` of `{SasView parameter name: (min, max, nbins)}`
+    :param sigma: smoothness regularization weight
+    :param sld: particle scattering length density
+    :param sld_solvent: solvent scattering length density (drho = sld - sld_solvent)
+    :param q_calc: extended q grid for resolution smearing (None = no smearing)
+    :param resolution_weights: resolution weight matrix, shape (len(q_calc), len(q))
 
     The contrast (`sld`, `sld_solvent`) is passed straight through: the API
     builds the Green's tensor with `drho = sld - sld_solvent` baked in and
-    returns `scale` as a SasView volume fraction directly.
+    returns `scale` as a SasView volume fraction directly. `q_calc` and
+    `resolution_weights` are passed through as-is, like `q`/`iq`/`diq`; when both
+    are given the API builds and smears the Green's tensor.
     """
     if not FFSI_AVAILABLE:
         raise RuntimeError("ffsi is not installed: %s" % _FFSI_IMPORT_ERROR)
@@ -134,7 +146,18 @@ def invert_shape(model_name, q, iq, diq, bins, sigma=DEFAULT_SIGMA, sld=None, sl
     # q is passed through as-is; invert() owns the backend/dtype conversion
     # (ffsi picks numpy vs cupy from the input arrays), keeping this adapter
     # free of a direct numpy dependency.
-    result = invert(model_name, q, iq, diq, grids, sld=sld, sld_solvent=sld_solvent, sigma=sigma)
+    result = invert(
+        model_name,
+        q,
+        iq,
+        diq,
+        grids,
+        sld=sld,
+        sld_solvent=sld_solvent,
+        sigma=sigma,
+        q_calc=q_calc,
+        resolution_weights=resolution_weights,
+    )
 
     distributions = [
         FreeFormDistribution(
@@ -205,6 +228,19 @@ class FreeFormFit(FitEngine):
 
             fitdata = arrange.get_data()          # FitData1D
             idx = fitdata.idx
+
+            # Resolution smearing rides on the smearer (set from the Resolution
+            # tab). Its sasmodels resolution exposes the extended q_calc grid and
+            # the (nq_calc, nq) weight matrix; ffsi smears the Green's tensor with
+            # them. The weight matrix is built over the full data q, so slice its
+            # columns to the qmin/qmax + nonzero-dy fit window (`idx`).
+            q_calc = resolution_weights = None
+            smearer = getattr(fitdata, "smearer", None)
+            resolution = getattr(smearer, "resolution", None)
+            if resolution is not None and getattr(resolution, "weight_matrix", None) is not None:
+                q_calc = resolution.q_calc
+                resolution_weights = resolution.weight_matrix[:, idx]
+
             result = invert_shape(
                 model_name,
                 fitdata.x[idx],
@@ -214,6 +250,8 @@ class FreeFormFit(FitEngine):
                 sigma=self.sigma,
                 sld=sld,
                 sld_solvent=sld_solvent,
+                q_calc=q_calc,
+                resolution_weights=resolution_weights,
             )
 
             fitting_result = FResult(model=model, data=fitdata,
