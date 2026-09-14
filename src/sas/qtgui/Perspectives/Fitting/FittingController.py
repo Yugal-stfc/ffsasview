@@ -187,7 +187,7 @@ class FittingController:
 
         fitters = []
         for fit_index in self.widget.all_data:
-            fitter_single = FreeFormFit(bins=bins)
+            fitter_single = FreeFormFit(bins=bins, sigma=self.widget.polydispersity_widget.freeFormSigma())
             data = GuiUtils.dataFromItem(fit_index)
             weighted_data = self.widget.addWeightingToData(data)
             try:

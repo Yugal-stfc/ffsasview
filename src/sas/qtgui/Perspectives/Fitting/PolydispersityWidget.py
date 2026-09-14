@@ -17,6 +17,10 @@ from sas.qtgui.Perspectives.Fitting import FittingUtilities
 from sas.qtgui.Perspectives.Fitting.UI.PolydispersityWidget import Ui_PolydispersityWidgetUI
 from sas.qtgui.Perspectives.Fitting.ViewDelegate import PolyViewDelegate
 
+# Default free-form smoothness regularization weight; single source of truth is the
+# fit engine (the import guards the optional ffsi dependency internally).
+from sas.sascalc.fit.FreeFormFitting import DEFAULT_SIGMA
+
 DEFAULT_POLYDISP_FUNCTION = 'gaussian'
 
 logger = logging.getLogger(__name__)
@@ -56,6 +60,15 @@ class PolydispersityWidget(QtWidgets.QWidget, Ui_PolydispersityWidgetUI):
         self.lstPoly.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         # self.lstPoly.customContextMenuRequested.connect(self.showModelContextMenu)
         self.lstPoly.setAttribute(QtCore.Qt.WA_MacShowFocusRect, False)
+
+        # Free-form smoothness (sigma) input: non-negative float, hidden unless
+        # in free-form mode (visibility tracked by updateFreeFormColumns()).
+        sigma_validator = GuiUtils.DoubleValidator()
+        sigma_validator.setBottom(0.0)
+        self.txtFreeFormSigma.setValidator(sigma_validator)
+        self.txtFreeFormSigma.setText(str(DEFAULT_SIGMA))
+        self.txtFreeFormSigma.setVisible(False)
+        self.lblFreeFormSigma.setVisible(False)
 
     def polyModel(self) -> FittingUtilities.ToolTippedItemModel:
         """
@@ -123,6 +136,10 @@ class PolydispersityWidget(QtWidgets.QWidget, Ui_PolydispersityWidgetUI):
         for column in range(self.poly_model.columnCount()):
             self.lstPoly.setColumnHidden(column, self.free_form and column not in visible_columns)
 
+        # The sigma box only applies to free-form inversion.
+        self.txtFreeFormSigma.setVisible(self.free_form)
+        self.lblFreeFormSigma.setVisible(self.free_form)
+
         if self.free_form:
             self.poly_model.setHeaderData(delegate.poly_npts, QtCore.Qt.Horizontal, "N bins")
             self.poly_model.header_tooltips[delegate.poly_npts] = "Enter number of discretisation bins over [min, max]"
@@ -151,6 +168,21 @@ class PolydispersityWidget(QtWidgets.QWidget, Ui_PolydispersityWidgetUI):
             nbins = int(GuiUtils.toDouble(self.poly_model.item(row, delegate.poly_npts).text()))
             bins[name] = (lo, hi, nbins)
         return bins
+
+    def freeFormSigma(self) -> float:
+        """
+        Free-form smoothness regularization weight from the input box.
+
+        Falls back to DEFAULT_SIGMA for empty, non-numeric or negative input
+        (the validator normally prevents these, but guard defensively).
+        """
+        try:
+            value = GuiUtils.toDouble(self.txtFreeFormSigma.text())
+        except TypeError:
+            return DEFAULT_SIGMA
+        if value < 0:
+            return DEFAULT_SIGMA
+        return value
 
     def getParamNamesPoly(self) -> list[str]:
         """
