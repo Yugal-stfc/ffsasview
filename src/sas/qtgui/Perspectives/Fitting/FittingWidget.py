@@ -1428,7 +1428,7 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         category = self.cbCategory.currentText()
         # Check if the user chose "Choose category entry"
         if category == CATEGORY_DEFAULT:
-            # if the previous category was not the default, keep it.
+            # if the previous  was not the default, keep it.
             # Otherwise, just return
             if self._previous_category_index != 0:
                 # We need to block signals, or else state changes on perceived unchanged conditions
@@ -1457,8 +1457,16 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         if self.model_data is not None:
             # Store any old parameters before switching to a new category
             self.page_parameters = self.getParameterDict()
-        # Wipe out the parameter model
+        # Wipe out the parameter model and related sub-models
         self._model_model.clear()
+        # Clear polydispersity state
+        self.polydispersity_widget.poly_model.clear()
+        self.polydispersity_widget.poly_params = {}
+        self.polydispersity_widget.poly_params_to_fit = []
+        # Clear magnetism state
+        self.magnetism_widget._magnet_model.clear()
+        self.magnetism_widget.magnet_params = {}
+        self.magnetism_widget.magnet_params_to_fit = []
         # Safely clear and enable the model combo
         self.cbModel.blockSignals(True)
         self.cbModel.clear()
@@ -2140,7 +2148,11 @@ class FittingWidget(QtWidgets.QWidget, Ui_FittingWidgetUI):
         if kernel_module is None:
             # mismatch between "name" attribute and actual filename.
             curr_model = self.models[model_name]
-            name, _ = os.path.splitext(os.path.basename(curr_model.filename))
+            filename = getattr(curr_model, 'filename', None)
+            if filename is None:
+                logger.error("Can't find the model file for %s", model_name)
+                return
+            name, _ = os.path.splitext(os.path.basename(filename))
             try:
                 kernel_module = generate.load_kernel_module(name)
             except ModuleNotFoundError as ex:
