@@ -1,6 +1,7 @@
 # Alphabetized list of OS and version agnostic dependencies
 bumps
 cffi
+cupy
 docutils
 dominate
 ffsi
