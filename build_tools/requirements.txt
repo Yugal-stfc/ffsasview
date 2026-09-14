@@ -1,7 +1,7 @@
 # Alphabetized list of OS and version agnostic dependencies
 bumps
 cffi
-cupy
+cupy==12.3.0
 docutils
 dominate
 ffsi
