@@ -1,7 +1,6 @@
 # Alphabetized list of OS and version agnostic dependencies
 bumps
 cffi
-cupy-cuda12x
 docutils
 dominate
 ffsi
